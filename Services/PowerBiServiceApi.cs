@@ -74,5 +74,55 @@ namespace AppOwnsData.Services {
       };
     }
 
+    public async Task<EmbeddedReportViewModel> GetReportWithRlsV2(string UserName, string[] Roles, bool CustomizationEnabled) {
+
+      PowerBIClient pbiClient = GetPowerBiClient();
+
+      // call to Power BI Service API to get embedding data
+      var report = await pbiClient.Reports.GetReportInGroupAsync(WorkspaceId, RlsReportId);
+
+      // generate read-only embed token for the report
+      var datasetId = report.DatasetId;
+
+      // generate V2 embed token requests for dataset report and workspace
+      IList<GenerateTokenRequestV2Dataset> datasetRequests = new List<GenerateTokenRequestV2Dataset>();
+      datasetRequests.Add(new GenerateTokenRequestV2Dataset(datasetId));
+
+      IList<GenerateTokenRequestV2Report> reportRequests = new List<GenerateTokenRequestV2Report>();
+      reportRequests.Add(new GenerateTokenRequestV2Report(report.Id, allowEdit: CustomizationEnabled));
+
+      var workspaceRequests = new List<GenerateTokenRequestV2TargetWorkspace>();
+      if (CustomizationEnabled) {
+        workspaceRequests.Add(new GenerateTokenRequestV2TargetWorkspace(WorkspaceId));
+      }
+
+      // create EffectiveIdentity object
+      var datasetList = new List<string>() { report.DatasetId };
+      IList<EffectiveIdentity> effectiveIdentities =
+        new List<EffectiveIdentity> { new EffectiveIdentity(UserName, datasetList, Roles) };
+
+      /// create top-level V2 token request
+      GenerateTokenRequestV2 tokenRequest =
+        new GenerateTokenRequestV2 {
+          Datasets = datasetRequests,
+          Reports = reportRequests,
+          TargetWorkspaces = workspaceRequests,
+          Identities = effectiveIdentities
+        };
+
+      // call to Power BI Service API and pass GenerateTokenRequestV2 object to generate embed token
+      var embedTokenResponse = pbiClient.EmbedToken.GenerateToken(tokenRequest);
+      var embedToken = embedTokenResponse.Token;
+
+      // return report embedding data to caller
+      return new EmbeddedReportViewModel {
+        Id = report.Id.ToString(),
+        EmbedUrl = report.EmbedUrl,
+        Name = report.Name,
+        Token = embedToken,
+        CustomizationEnabled = CustomizationEnabled
+      };
+    }
+
   }
 }
